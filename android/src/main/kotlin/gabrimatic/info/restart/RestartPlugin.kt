@@ -11,6 +11,9 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import android.os.Process
+import android.os.Handler
+import android.os.Looper
 
 /**
  * `RestartPlugin` class provides a method to restart a Flutter application in Android.
@@ -66,11 +69,35 @@ class RestartPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
      */
     private fun restartApp() {
         activity?.let { currentActivity ->
-            val intent =
-                currentActivity.packageManager.getLaunchIntentForPackage(currentActivity.packageName)
-            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            currentActivity.startActivity(intent)
-            currentActivity.finishAffinity()
+            try {
+                // Create a proper restart intent
+                val packageManager = currentActivity.packageManager
+                val intent = packageManager.getLaunchIntentForPackage(currentActivity.packageName)
+                val componentName = intent!!.component
+                val restartIntent = Intent.makeRestartActivityTask(componentName)
+
+                // Start the new instance
+                currentActivity.startActivity(restartIntent)
+
+                // Give the new activity time to start
+                Handler(Looper.getMainLooper()).postDelayed({
+                    // Kill the current process completely
+                    Process.killProcess(Process.myPid())
+                    // Force exit as a backup method
+                    Runtime.getRuntime().exit(0)
+                }, 100)
+            } catch (e: Exception) {
+                // Fallback to the previous implementation if anything fails
+                val intent = currentActivity.packageManager.getLaunchIntentForPackage(currentActivity.packageName)
+                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                currentActivity.startActivity(intent)
+                currentActivity.finishAffinity()
+
+                // Additionally force process termination
+                Handler(Looper.getMainLooper()).postDelayed({
+                    Process.killProcess(Process.myPid())
+                }, 100)
+            }
         }
     }
 
